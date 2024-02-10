@@ -99,6 +99,7 @@ class MambaWrapper(nn.Module):
         d_model: int,
         bidirectional: bool = False,
         bidirectional_strategy: Optional[str] = None,
+        weight_tying: bool = True,
         **mamba_kwargs,
     ):
         super().__init__()
@@ -121,6 +122,46 @@ class MambaWrapper(nn.Module):
         )
         if self.bidirectional_strategy == "concatenate":
             self.downsample = nn.Linear(2*d_model, d_model, bias=False)
+
+        ### Optionally tie the weights between the convolutions and the out layer such that only the S6 layer is really being "flipped"
+        self.weight_tying = weight_tying
+        if self.weight_tying:
+            # List of the weights that mamba passes into selective_scan
+            #     self.conv1d.weight,
+            #     self.conv1d.bias,
+            #     self.x_proj.weight,
+            #     self.dt_proj.weight,
+            #     self.dt_proj.bias,
+            #     self.out_proj.weight,
+            #     self.out_proj.bias,
+            #     self.A
+            #     self.D
+
+            print(f"==> TYING WEIGHTS OF CONV AND out_proj")
+            ## tying the conv weights
+            self.mamba_fwd.conv1d.weight = self.mamba_rev.conv1d.weight
+            self.mamba_fwd.conv1d.bias = self.mamba_rev.conv1d.bias
+            ## tying the out projection weights
+            self.mamba_fwd.out_proj.weight = self.mamba_rev.out_proj.weight
+            self.mamba_fwd.out_proj.bias = self.mamba_rev.out_proj.bias
+
+            ####
+            # OTHERWISE if you would like to tie the S6 layers directly?
+            ####
+
+            # print(f"==> TYING WEIGHTS OF S6")
+            # ## tying the conv weights
+            # self.mamba_fwd.A_log = self.mamba_rev.A_log
+            # self.mamba_fwd.D = self.mamba_rev.D
+            # ## tying the out projection weights
+            # self.mamba_fwd.x_proj.weight = self.mamba_rev.x_proj.weight
+            # self.mamba_fwd.dt_proj.weight = self.mamba_rev.dt_proj.weight
+            # self.mamba_fwd.dt_proj.bias = self.mamba_rev.dt_proj.bias
+
+
+
+
+
         
     def forward(self, hidden_states, mask=None, inference_params=None):
         """Bidirectional-enabled forward pass
